@@ -16,8 +16,8 @@ Ode is a agent tool that bridges your coding agents (OpenCode, Claude Code, Code
 
 ## Compare with OpenClaw
 
-* OpenClaw is greate, but Ode utilize **thread based** messaging to organize things better, making it easy to port sessions in coding agents directly to chat apps. Just work on one thing in one thread.
-* Ode provide **live message updates**, you can monitor from real-time text updates for more confident.
+* OpenClaw is great, but Ode uses **thread based** messaging to organize things better, making it easy to port sessions in coding agents directly to chat apps. Just work on one thing in one thread.
+* Ode provides **live message updates**, you can monitor from real-time text updates for more confident.
 * **Channel based settings** lets you configure multiple work directories easily in one machine and one slack workspace.
 * **Work in parallel**, multiple threads can work together and isolated by worktree, multiple channels can also work together, just send messages.
 * **Team focused**, just allow people to join channel to give them permissions to work together.
