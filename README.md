@@ -38,7 +38,7 @@ Ode is a agent tool that bridges your coding agents (OpenCode, Claude Code, Code
 One-line install (macOS/Linux):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/odefun/ode/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/realrunner/ode/main/scripts/install.sh | bash
 ```
 
 ```bash

@@ -64,7 +64,11 @@ const WORKSPACE_ROUTES: WorkspaceRouteSpec[] = [
   {
     path: "/api/slack-discover",
     fallbackMessage: "Slack workspace discovery failed",
-    resolveStatus: (message) => (message.startsWith("Missing Slack") ? 400 : 500),
+    resolveStatus: (message) => message.startsWith("Missing Slack")
+      ? 400
+      : message.includes("rate limited")
+        ? 429
+        : 500,
     run: async (payload) => discoverSlackWorkspace(
       getString(payload, "slackAppToken"),
       getString(payload, "slackBotToken")

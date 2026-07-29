@@ -65,6 +65,29 @@ describe("web app routing", () => {
     expect(payload.error?.startsWith("Missing Slack")).toBe(true);
   });
 
+  it("returns 429 for Slack discovery rate limits", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => Response.json(
+      { ok: false, error: "ratelimited" },
+      { status: 429, headers: { "retry-after": "0" } }
+    )) as unknown as typeof fetch;
+
+    try {
+      const app = createWebApp();
+      const response = await app.handle(new Request("http://localhost/api/slack-discover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slackAppToken: "xapp-test", slackBotToken: "xoxb-test" }),
+      }));
+
+      expect(response.status).toBe(429);
+      const payload = await response.json() as { ok: boolean; error?: string };
+      expect(payload.error).toContain("Slack API team.info rate limited after 4 attempts");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("returns paginated message threads and a thread's detail timeline", async () => {
     clearMessageStoreForTests();
     const threadKey = buildThreadKey("C-web", "T-web");

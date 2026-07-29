@@ -36,7 +36,7 @@ Ode 是一个编程代理工具，可将你的编码Agent（OpenCode、Claude Co
 一行安装（macOS/Linux）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/odefun/ode/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/realrunner/ode/main/scripts/install.sh | bash
 ```
 
 ```bash

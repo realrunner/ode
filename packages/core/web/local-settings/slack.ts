@@ -21,30 +21,60 @@ type SlackTeam = {
   domain?: string;
 };
 
+const SLACK_MAX_RATE_LIMIT_RETRIES = 3;
+const SLACK_CONVERSATIONS_PAGE_INTERVAL_MS = 3000;
+const SLACK_CONVERSATIONS_PAGE_JITTER_MS = 250;
+
+const getRetryAfterMs = (response: Response, attempt: number): number => {
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter !== null) {
+    const retryAfterSeconds = Number(retryAfter);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      return retryAfterSeconds * 1000;
+    }
+  }
+  return 1000 * 2 ** attempt;
+};
+
 const slackRequest = async <T>(token: string, path: string, params?: URLSearchParams) => {
   const url = new URL(`https://slack.com/api/${path}`);
   if (params) {
     url.search = params.toString();
   }
-  const response = await fetch(url.toString(), {
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/x-www-form-urlencoded",
-    },
-  });
-  const data = (await response.json()) as T & { ok?: boolean; error?: string };
-  if (!data.ok) {
-    throw new Error(data.error ?? "Slack API error");
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url.toString(), {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+    });
+    const data = (await response.json()) as T & { ok?: boolean; error?: string };
+    if (data.ok) return data;
+
+    const rateLimited = response.status === 429 || data.error === "ratelimited";
+    if (!rateLimited) {
+      throw new Error(`Slack API ${path} failed (${response.status}): ${data.error ?? "unknown error"}`);
+    }
+
+    const retryAfterMs = getRetryAfterMs(response, attempt);
+    if (attempt >= SLACK_MAX_RATE_LIMIT_RETRIES) {
+      throw new Error(
+        `Slack API ${path} rate limited after ${SLACK_MAX_RATE_LIMIT_RETRIES + 1} attempts; retry after ${Math.ceil(retryAfterMs / 1000)} seconds`
+      );
+    }
+    await Bun.sleep(retryAfterMs);
   }
-  return data;
 };
 
-const fetchSlackChannels = async (token: string): Promise<SlackChannel[]> => {
+export const fetchSlackChannels = async (
+  token: string,
+  sleep: (ms: number) => Promise<unknown> = Bun.sleep
+): Promise<SlackChannel[]> => {
   const channels: SlackChannel[] = [];
   let cursor = "";
   do {
     const params = new URLSearchParams({
-      limit: "200",
+      limit: "999",
       types: "public_channel,private_channel",
       exclude_archived: "true",
     });
@@ -56,6 +86,12 @@ const fetchSlackChannels = async (token: string): Promise<SlackChannel[]> => {
     const joinedChannels = (data.channels ?? []).filter((channel) => channel.is_member === true);
     channels.push(...joinedChannels);
     cursor = data.response_metadata?.next_cursor ?? "";
+    if (cursor) {
+      await sleep(
+        SLACK_CONVERSATIONS_PAGE_INTERVAL_MS
+          + Math.floor(Math.random() * SLACK_CONVERSATIONS_PAGE_JITTER_MS)
+      );
+    }
   } while (cursor);
   return channels;
 };

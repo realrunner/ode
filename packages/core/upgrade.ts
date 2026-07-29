@@ -4,8 +4,8 @@ import { tmpdir } from "os";
 import { createHash } from "crypto";
 import { spawn } from "child_process";
 
-const LATEST_RELEASE_URL = "https://api.github.com/repos/odefun/ode/releases/latest";
-const RELEASE_DOWNLOAD_BASE_URL = "https://github.com/odefun/ode/releases/download";
+const LATEST_RELEASE_URL = "https://api.github.com/repos/realrunner/ode/releases/latest";
+const RELEASE_DOWNLOAD_BASE_URL = "https://github.com/realrunner/ode/releases/download";
 
 type UpdateCheckResult = {
   currentVersion: string;

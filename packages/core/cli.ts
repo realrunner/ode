@@ -82,7 +82,7 @@ function printHelp(): void {
 async function upgrade(): Promise<void> {
   if (!isInstalledBinary()) {
     console.error("ode upgrade must be run from the installed ode binary.");
-    console.error("Install with: curl -fsSL https://raw.githubusercontent.com/odefun/ode/main/scripts/install.sh | bash");
+    console.error("Install with: curl -fsSL https://raw.githubusercontent.com/realrunner/ode/main/scripts/install.sh | bash");
     process.exit(1);
   }
   const { latestVersion } = await performUpgrade();

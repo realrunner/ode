@@ -55,6 +55,7 @@ const initialState: LocalSettingState = {
 };
 
 const store = writable<LocalSettingState>(initialState);
+let slackDiscoveryInFlight = false;
 
 function validateWorkspaceConfig(config: DashboardConfig): string | null {
   const idCounts = new Map<string, number>();
@@ -595,7 +596,9 @@ async function discoverSlackWorkspace(
     }));
     return null;
   }
+  if (slackDiscoveryInFlight) return null;
 
+  slackDiscoveryInFlight = true;
   store.update((state) => ({ ...state, isAddingWorkspace: true, message: "" }));
   try {
     const response = await fetch("/api/slack-discover", {
@@ -650,6 +653,8 @@ async function discoverSlackWorkspace(
       message: `Add workspace failed: ${error instanceof Error ? error.message : String(error)}`,
     }));
     return null;
+  } finally {
+    slackDiscoveryInFlight = false;
   }
 }
 
