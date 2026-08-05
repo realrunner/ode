@@ -15,6 +15,34 @@ import { buildCodeBuddyCommand, buildCodeBuddyCommandArgs, parseCodeBuddyRespons
 import { buildCrushCommand, buildCrushCommandArgs, parseCrushResponse } from "../crush/client";
 
 describe("agent cli command formatting", () => {
+  it("adds local attachment paths and native file parts to prompts", () => {
+    const parts = buildPromptParts("C123", "inspect this", undefined, {
+      attachments: [{
+        id: "F1",
+        filename: "screen shot.png",
+        mimeType: "image/png",
+        size: 123,
+        localPath: "/tmp/screen shot.png",
+      }],
+    });
+
+    expect(parts).toEqual([
+      {
+        type: "text",
+        text: "Attached files were downloaded to the local filesystem:\n- /tmp/screen shot.png (image/png, 123 bytes)",
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "screen shot.png",
+        url: "file:///tmp/screen%20shot.png",
+      },
+      { type: "text", text: "inspect this" },
+    ]);
+    expect(buildPromptText(parts)).toContain("/tmp/screen shot.png");
+    expect(buildPromptText(parts)).not.toContain("file://");
+  });
+
   it("builds the final Claude CLI command", () => {
     const message = "hello world";
     const parts = buildPromptParts("C123", message);

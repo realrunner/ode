@@ -12,6 +12,10 @@ import {
   deliveryStats,
   renderDeliveryStatsForSlack,
 } from "@/ims/shared/delivery-stats";
+import {
+  downloadSlackAttachments,
+  extractSlackFileReferences,
+} from "@/ims/slack/attachments";
 
 type RouterDeps = {
   app: any;
@@ -35,6 +39,7 @@ type RouterDeps = {
   postCronLauncher: (channelId: string, userId: string, client: any) => Promise<void>;
   describeSettingsIssues: (channelId: string) => string[];
   handleInboundEvent: (event: RawInboundEvent) => Promise<void>;
+  downloadAttachments?: typeof downloadSlackAttachments;
 };
 
 type WorkspaceAuth = ReturnType<RouterDeps["resolveWorkspaceAuth"]>;
@@ -74,6 +79,7 @@ type IncomingMessageData = {
   text: string;
   threadId: string;
   messageId: string;
+  files: ReturnType<typeof extractSlackFileReferences>;
 };
 
 function syncWorkspaceAuth(
@@ -109,16 +115,19 @@ function extractMentionedUserIds(text: string): string[] {
 }
 
 function extractIncomingMessageData(message: any): IncomingMessageData | null {
-  if (message.subtype !== undefined) return null;
-  if (!("text" in message) || !message.text) return null;
+  if (message.subtype !== undefined && message.subtype !== "file_share") return null;
+  const files = extractSlackFileReferences(message);
+  const text = typeof message.text === "string" ? message.text : "";
+  if (!text && files.length === 0) return null;
   if (!("user" in message) || !message.user) return null;
 
   return {
     channelId: message.channel,
     userId: message.user,
-    text: message.text,
+    text,
     threadId: message.thread_ts || message.ts,
     messageId: message.ts,
+    files,
   };
 }
 
@@ -300,7 +309,7 @@ export function registerSlackMessageRouter(deps: RouterDeps): void {
       if (!incoming) return;
       contextData = incoming;
 
-      const { channelId, userId, text, threadId, messageId } = incoming;
+      const { channelId, userId, text, threadId, messageId, files } = incoming;
       const contextBotToken = context?.botToken as string | undefined;
       let workspaceAuth = syncWorkspaceAuth(
         deps,
@@ -345,6 +354,7 @@ export function registerSlackMessageRouter(deps: RouterDeps): void {
       const hasAnyMention = mentionedUserIds.length > 0;
       const isMention = currentBotUserId ? mentionedUserIds.includes(currentBotUserId) : false;
       const cleanText = stripBotMention(text, currentBotUserId);
+      const policyText = cleanText || (files.length > 0 ? "Please inspect the attached file(s)." : "");
       logSlackTrace("Slack mention parse", {
         channelId,
         threadId,
@@ -367,7 +377,7 @@ export function registerSlackMessageRouter(deps: RouterDeps): void {
       const isTopLevel = threadId === messageId;
       const threadOwnerMessage = deps.isThreadOwner(channelId, threadId, userId);
       const threadActive = deps.isThreadActive(channelId, threadId, runtimeBotId);
-      const inboundEvent: RawInboundEvent = {
+      let inboundEvent: RawInboundEvent = {
         platform: "slack",
         botId: runtimeBotId,
         channelId,
@@ -383,7 +393,7 @@ export function registerSlackMessageRouter(deps: RouterDeps): void {
         mentionedBot: isMention,
         activeThread: threadActive,
         rawText: text,
-        normalizedText: cleanText,
+        normalizedText: policyText,
         receivedAtMs: Date.now(),
       };
       const flowResult = toIncomingFlowResult(slackInboundAdapter.evaluate(inboundEvent));
@@ -452,6 +462,35 @@ export function registerSlackMessageRouter(deps: RouterDeps): void {
           thread_ts: threadId,
         });
         return;
+      }
+
+      if (flowResult.type === "forward" && files.length > 0) {
+        const token = contextBotToken ?? workspaceAuth?.botToken;
+        if (!token) {
+          await say({
+            text: "I could not download the attachment because Slack authentication is unavailable.",
+            thread_ts: threadId,
+          });
+          if (!cleanText) return;
+        } else {
+          const result = await (deps.downloadAttachments ?? downloadSlackAttachments)({
+            files,
+            client,
+            token,
+            channelId,
+            threadId,
+            messageId,
+          });
+          inboundEvent = { ...inboundEvent, attachments: result.attachments };
+
+          if (result.failures.length > 0) {
+            await say({
+              text: `I could not download ${result.failures.length} attachment(s): ${result.failures.map((failure) => failure.reason).join("; ")}`,
+              thread_ts: threadId,
+            });
+          }
+          if (result.attachments.length === 0 && !cleanText) return;
+        }
       }
 
       await deps.handleInboundEvent(inboundEvent);

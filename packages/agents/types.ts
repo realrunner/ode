@@ -1,3 +1,5 @@
+import type { InboundAttachment } from "@/core/model/inbound-attachment";
+
 export interface OpenCodeMessage {
   text: string;
   messageType: "assistant" | "result" | "system" | "user" | "notify";
@@ -28,6 +30,7 @@ export type SlackContext = PlatformContext;
 export interface OpenCodeMessageContext {
   threadHistory?: string;
   slack?: PlatformContext;
+  attachments?: readonly InboundAttachment[];
 }
 
 export interface OpenCodeSessionInfo {
@@ -35,4 +38,6 @@ export interface OpenCodeSessionInfo {
   created: boolean;
 }
 
-export type PromptPart = { type: "text"; text: string };
+export type PromptPart =
+  | { type: "text"; text: string }
+  | { type: "file"; mime: string; filename: string; url: string };

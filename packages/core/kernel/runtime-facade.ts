@@ -142,6 +142,7 @@ export class KernelRuntimeFacade {
             userId: event.userId,
             messageId: event.messageId,
             botToken: event.botId,
+            attachments: event.attachments,
           },
           decision.text
         );
@@ -205,6 +206,7 @@ export class KernelRuntimeFacade {
         userId: event.userId,
         messageId: event.messageId,
         botToken: event.botId,
+        attachments: event.attachments,
       },
       decision.text
     );
@@ -270,6 +272,7 @@ export class KernelRuntimeFacade {
       userId: threadOwnerUserId,
       threadHistory,
     });
+    agentContext.attachments = context.attachments;
 
     const providerId = this.deps.agent.getProviderForSession(sessionId);
     const options: OpenCodeOptions | undefined = buildMessageOptions({

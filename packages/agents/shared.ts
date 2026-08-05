@@ -1,4 +1,5 @@
 import type { OpenCodeMessageContext, OpenCodeOptions, PromptPart, SlackContext } from "./types";
+import { pathToFileURL } from "node:url";
 
 export function buildSystemPrompt(slack?: SlackContext): string {
   if (!slack) return "";
@@ -46,13 +47,34 @@ export function buildPromptParts(
     });
   }
 
+  if (context?.attachments?.length) {
+    parts.push({
+      type: "text",
+      text: [
+        "Attached files were downloaded to the local filesystem:",
+        ...context.attachments.map((attachment) =>
+          `- ${attachment.localPath} (${attachment.mimeType}, ${attachment.size} bytes)`
+        ),
+      ].join("\n"),
+    });
+    parts.push(...context.attachments.map((attachment) => ({
+      type: "file" as const,
+      mime: attachment.mimeType,
+      filename: attachment.filename,
+      url: pathToFileURL(attachment.localPath).href,
+    })));
+  }
+
   parts.push({ type: "text", text: message });
 
   return parts;
 }
 
 export function buildPromptText(parts: PromptPart[]): string {
-  return parts.map((part) => part.text).join("\n\n");
+  return parts
+    .filter((part): part is Extract<PromptPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("\n\n");
 }
 
 export function buildSystemWrappedPrompt(systemPrompt: string, prompt: string): string {

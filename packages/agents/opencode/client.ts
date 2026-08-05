@@ -276,7 +276,13 @@ export async function sendMessage(
         ? buildOpenCodeCommand(serverUrl, activeSessionId, payload)
         : null;
 
-      log.debug("Sending message via SDK", { sessionId: activeSessionId, agent, model, command });
+      log.debug("Sending message via SDK", {
+        sessionId: activeSessionId,
+        agent,
+        model,
+        command: parts.some((part) => part.type === "file") ? undefined : command,
+        attachmentCount: parts.filter((part) => part.type === "file").length,
+      });
 
       const result = await client.session.prompt({
         sessionID: activeSessionId,

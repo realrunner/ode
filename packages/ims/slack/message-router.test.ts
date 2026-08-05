@@ -25,6 +25,109 @@ function createDeps(overrides: Partial<Parameters<typeof registerSlackMessageRou
 }
 
 describe("registerSlackMessageRouter", () => {
+  it("downloads and forwards mentioned file_share messages", async () => {
+    let registeredHandler: ((args: any) => Promise<void>) | undefined;
+    const handleInboundEvent = mock(async () => {});
+    const downloadAttachments = mock(async () => ({
+      attachments: [{
+        id: "F1",
+        filename: "image.png",
+        mimeType: "image/png",
+        size: 4,
+        localPath: "/tmp/image.png",
+      }],
+      failures: [],
+    }));
+    const deps = createDeps({
+      app: {
+        message: (handler: (args: any) => Promise<void>) => {
+          registeredHandler = handler;
+        },
+      },
+      handleInboundEvent,
+      downloadAttachments,
+    });
+
+    registerSlackMessageRouter(deps);
+    await registeredHandler!({
+      message: {
+        channel: "C1",
+        user: "U1",
+        text: "<@U_BOT> inspect this",
+        ts: "1710000000.000020",
+        subtype: "file_share",
+        files: [{
+          id: "F1",
+          name: "image.png",
+          mimetype: "image/png",
+          size: 4,
+          url_private_download: "https://files.slack.com/image.png",
+        }],
+      },
+      client: {
+        auth: { test: async () => ({ user_id: "U_BOT", team_id: "T1" }) },
+        files: { info: async () => ({}) },
+      },
+      context: { botToken: "xoxb-test" },
+      say: mock(async () => {}),
+    });
+
+    expect(downloadAttachments).toHaveBeenCalledTimes(1);
+    expect(handleInboundEvent).toHaveBeenCalledWith(expect.objectContaining({
+      normalizedText: "inspect this",
+      attachments: [expect.objectContaining({ localPath: "/tmp/image.png" })],
+    }));
+  });
+
+  it("accepts attachment-only replies in active threads", async () => {
+    let registeredHandler: ((args: any) => Promise<void>) | undefined;
+    const handleInboundEvent = mock(async () => {});
+    const deps = createDeps({
+      app: {
+        message: (handler: (args: any) => Promise<void>) => {
+          registeredHandler = handler;
+        },
+      },
+      isThreadOwner: () => true,
+      isThreadActive: () => true,
+      handleInboundEvent,
+      downloadAttachments: async () => ({
+        attachments: [{
+          id: "F1",
+          filename: "notes.txt",
+          mimeType: "text/plain",
+          size: 5,
+          localPath: "/tmp/notes.txt",
+        }],
+        failures: [],
+      }),
+    });
+
+    registerSlackMessageRouter(deps);
+    await registeredHandler!({
+      message: {
+        channel: "C1",
+        user: "U1",
+        text: "",
+        ts: "1710000000.000021",
+        thread_ts: "1710000000.000010",
+        subtype: "file_share",
+        files: [{ id: "F1", name: "notes.txt" }],
+      },
+      client: {
+        auth: { test: async () => ({ user_id: "U_BOT", team_id: "T1" }) },
+        files: { info: async () => ({}) },
+      },
+      context: { botToken: "xoxb-test" },
+      say: mock(async () => {}),
+    });
+
+    expect(handleInboundEvent).toHaveBeenCalledWith(expect.objectContaining({
+      normalizedText: "Please inspect the attached file(s).",
+      attachments: [expect.objectContaining({ localPath: "/tmp/notes.txt" })],
+    }));
+  });
+
   it("forwards stop-like messages to runtime kernel", async () => {
     let registeredHandler: ((args: any) => Promise<void>) | undefined;
     const handleInboundEvent = mock(async () => {});
