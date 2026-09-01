@@ -49,6 +49,10 @@ import {
 } from "@/ims/discord/utils/rate-limit";
 import { DiscordStatusMessageIndex } from "@/ims/discord/state/status-message-index";
 import type { RawInboundEvent } from "@/core/model/raw-inbound-event";
+import {
+  downloadDiscordAttachments,
+  extractDiscordAttachmentReferences,
+} from "@/ims/discord/attachments";
 
 const DISCORD_MESSAGE_LIMIT = 2000;
 const DISCORD_THREAD_NAME_LIMIT = 25;
@@ -494,6 +498,7 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
 
             const threadId = message.channel.id;
             const text = message.content.trim();
+            const files = extractDiscordAttachmentReferences(message);
             const mentioned = isBotMentioned(message, client.user.id);
             const hasAnyMention = (message?.mentions?.users?.size ?? 0) > 0;
             if (await maybeHandleLauncherCommand({
@@ -505,9 +510,12 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
               return;
             }
             const active = isThreadActive(parentId, threadId, processorId);
-            const normalizedText = mentioned ? cleanBotMention(text, client.user.id) : text;
+            const cleanText = mentioned ? cleanBotMention(text, client.user.id) : text;
+            const normalizedText = cleanText || (files.length > 0 ? "Please inspect the attached file(s)." : "");
             const threadSession = loadSession(parentId, threadId);
-            const inboundEvent: RawInboundEvent = {
+            const threadOwnerMessage = isSyntheticOwner(threadSession?.threadOwnerUserId)
+              || threadSession?.threadOwnerUserId === message.author.id;
+            let inboundEvent: RawInboundEvent = {
               platform: "discord",
               botId: processorId,
               channelId: parentId,
@@ -517,8 +525,7 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
               messageId: message.id,
               userId: message.author.id,
               selfMessage: false,
-              threadOwnerMessage: isSyntheticOwner(threadSession?.threadOwnerUserId)
-                || threadSession?.threadOwnerUserId === message.author.id,
+              threadOwnerMessage,
               isTopLevel: false,
               hasAnyMention,
               mentionedBot: mentioned,
@@ -527,6 +534,23 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
               normalizedText,
               receivedAtMs: Date.now(),
             };
+            const eligibleForRuntime = (!hasAnyMention || mentioned)
+              && (mentioned || active || threadOwnerMessage);
+            if (files.length > 0 && eligibleForRuntime) {
+              const result = await downloadDiscordAttachments({
+                files,
+                channelId: parentId,
+                threadId,
+                messageId: message.id,
+              });
+              inboundEvent = { ...inboundEvent, attachments: result.attachments };
+              if (result.failures.length > 0) {
+                await message.reply(
+                  `I could not download ${result.failures.length} attachment(s): ${result.failures.map((failure) => failure.reason).join("; ")}`
+                );
+              }
+              if (result.attachments.length === 0 && !cleanText) return;
+            }
             rememberThreadProcessor(parentId, threadId, processorId);
             await runtime.handleInboundEvent(inboundEvent);
             return;
@@ -546,6 +570,7 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
 
           const topLevelMentioned = isBotMentioned(message, client.user.id);
           const topLevelText = cleanBotMention(message.content, client.user.id);
+          const files = extractDiscordAttachmentReferences(message);
           if (!topLevelMentioned) {
             log.debug(formatIncomingDropMessage("not_mentioned_and_inactive"), {
               platform: "discord",
@@ -558,7 +583,7 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
             });
             return;
           }
-          if (!topLevelText.trim()) {
+          if (!topLevelText.trim() && files.length === 0) {
             await message.reply("Please include a request after mentioning me.");
             return;
           }
@@ -573,12 +598,26 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
           }
 
           const thread = await message.startThread({
-            name: buildMeaningfulThreadName(topLevelText, DISCORD_THREAD_NAME_LIMIT),
+            name: buildMeaningfulThreadName(topLevelText || "Attached files", DISCORD_THREAD_NAME_LIMIT),
             autoArchiveDuration: 60,
           });
 
           markThreadActive(parentId, thread.id, processorId);
           rememberThreadProcessor(parentId, thread.id, processorId);
+          const result = files.length > 0
+            ? await downloadDiscordAttachments({
+                files,
+                channelId: parentId,
+                threadId: thread.id,
+                messageId: message.id,
+              })
+            : { attachments: [], failures: [] };
+          if (result.failures.length > 0) {
+            await thread.send(
+              `I could not download ${result.failures.length} attachment(s): ${result.failures.map((failure) => failure.reason).join("; ")}`
+            );
+          }
+          if (files.length > 0 && result.attachments.length === 0 && !topLevelText.trim()) return;
           await runtime.handleInboundEvent({
             platform: "discord",
             botId: processorId,
@@ -595,7 +634,8 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
               mentionedBot: true,
              activeThread: false,
             rawText: message.content,
-            normalizedText: topLevelText,
+            normalizedText: topLevelText || "Please inspect the attached file(s).",
+            attachments: result.attachments,
             receivedAtMs: Date.now(),
           });
         } catch (error) {
