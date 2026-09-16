@@ -14,3 +14,7 @@ Ask clarifying questions if you need focus on a specific endpoint, transport, or
 ## Sources
 - https://opencode.ai/docs/server/
 - https://opencode.ai/docs/sdk/
+
+## Current SDK notes
+- OpenCode `1.18.31` can return structured request errors from `session.prompt`, including `{ _tag: "InvalidRequestError", message, kind?, field? }`. Format the object fields explicitly; string interpolation produces `[object Object]` and hides the validation failure.
+- Keep `@opencode-ai/sdk` aligned with the installed OpenCode CLI when investigating server compatibility. The v2 `client.session.prompt` convenience API still accepts flattened parameters such as `sessionID`, `directory`, `model`, and `parts`.

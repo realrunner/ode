@@ -6,7 +6,7 @@
       "name": "ode",
       "dependencies": {
         "@larksuiteoapi/node-sdk": "^1.71.1",
-        "@opencode-ai/sdk": "^1.18.2",
+        "@opencode-ai/sdk": "^1.18.31",
         "@sentry/bun": "^10.65.0",
         "@slack/bolt": "^4.7.3",
         "@slack/socket-mode": "^2.0.7",
@@ -65,7 +65,7 @@
 
     "@larksuiteoapi/node-sdk": ["@larksuiteoapi/node-sdk@1.71.1", "", { "dependencies": { "axios": "^1.16.0", "lodash.identity": "^3.0.0", "lodash.merge": "^4.6.2", "lodash.pickby": "^4.6.0", "protobufjs": "^7.2.6", "qs": "^6.14.2", "ws": "^8.19.0" } }, "sha512-Z4cZmgWvwiE7tCHqGm+t7DKvbpNRRTH2HqVwcYiOMAwbjIytXSoQqWytsOVu3p+d0fIvrtyIPZok5HOV/VNxxw=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.2", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-40DIMMrl2W0TMFKtTnrYKed3ElXhqEkP0oLahQEd6Mm9mTdu/B2Bc9A19++IkKKFIxbxKFaUhik+vBUiNBrFtA=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.31", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-Raouthf8Lhe9edjvYeeSK7SgvdoU6bBjH9qV3f70dHoa6h+z0X2TMz/e22/wKp/StlFUZ4kIRpYYxFnY8/k01w=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 

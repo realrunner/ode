@@ -77,6 +77,42 @@ export function formatInfoError(error: OpenCodeInfoError): string {
   return `OpenCode ${name}${statusSuffix}`;
 }
 
+export function formatSdkError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (!error || typeof error !== "object") return String(error);
+
+  const record = error as Record<string, unknown>;
+  const data = record.data && typeof record.data === "object"
+    ? record.data as Record<string, unknown>
+    : undefined;
+  const message = typeof record.message === "string"
+    ? record.message
+    : typeof data?.message === "string"
+      ? data.message
+      : undefined;
+  const name = typeof record.name === "string"
+    ? record.name
+    : typeof record._tag === "string"
+      ? record._tag
+      : typeof record.code === "string"
+        ? record.code
+        : undefined;
+  const field = typeof record.field === "string" ? record.field : undefined;
+  const kind = typeof record.kind === "string" ? record.kind : undefined;
+  const context = [kind, field].filter(Boolean).join(" ");
+
+  if (message) {
+    return `${name ? `${name}: ` : ""}${message}${context ? ` (${context})` : ""}`;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 /**
  * `MessageAbortedError` is produced by the OpenCode server when a run is
  * cancelled (e.g. the user typed `stop` and the kernel called
@@ -296,7 +332,7 @@ export async function sendMessage(
       });
 
       if (result.error) {
-        throw new Error(`OpenCode error: ${result.error}`);
+        throw new Error(`OpenCode error: ${formatSdkError(result.error)}`);
       }
 
       if (!result.data) {

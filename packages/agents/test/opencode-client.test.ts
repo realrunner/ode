@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   extractInfoError,
   formatInfoError,
+  formatSdkError,
   isAbortError,
   isOversizedImageError,
 } from "../opencode/client";
@@ -79,5 +80,28 @@ describe("opencode info-error detection", () => {
   it("does not flag provider failures as aborts", () => {
     expect(isAbortError({ name: "APIError", data: { message: "boom" } })).toBe(false);
     expect(isAbortError({ name: "ProviderAuthError", data: {} })).toBe(false);
+  });
+});
+
+describe("opencode SDK error formatting", () => {
+  it("formats the structured validation errors returned by recent servers", () => {
+    expect(formatSdkError({
+      _tag: "InvalidRequestError",
+      message: "Model is not available",
+      kind: "Body",
+      field: "model",
+    })).toBe("InvalidRequestError: Model is not available (Body model)");
+  });
+
+  it("formats named SDK errors with nested messages", () => {
+    expect(formatSdkError({
+      name: "NotFoundError",
+      data: { message: "Session does not exist" },
+    })).toBe("NotFoundError: Session does not exist");
+  });
+
+  it("serializes structured errors without a message", () => {
+    expect(formatSdkError({ _tag: "BadRequest", details: ["invalid payload"] }))
+      .toBe('{"_tag":"BadRequest","details":["invalid payload"]}');
   });
 });
