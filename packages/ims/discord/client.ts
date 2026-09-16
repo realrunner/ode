@@ -53,6 +53,7 @@ import {
   downloadDiscordAttachments,
   extractDiscordAttachmentReferences,
 } from "@/ims/discord/attachments";
+import { watchDiscordGatewayConnection } from "@/ims/discord/gateway-watchdog";
 
 const DISCORD_MESSAGE_LIMIT = 2000;
 const DISCORD_THREAD_NAME_LIMIT = 25;
@@ -62,8 +63,11 @@ const DISCORD_UPDATE_RETRY_BASE_MS = 400;
 
 const discordClients = new Map<string, Client>();
 const discordClientByProcessorId = new Map<string, Client>();
+const discordConnectionMonitorCleanup = new WeakMap<Client, () => void>();
 const statusMessageIndex = new DiscordStatusMessageIndex();
 const discordThreadProcessorByKey = new Map<string, string>();
+let discordRecovery: Promise<void> | null = null;
+let discordIntentionalStop = false;
 const discordProcessorManager = createProcessorManager({
   createRuntime: (processorId) => createCoreRuntime({
     platform: "discord",
@@ -482,7 +486,6 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
         ],
         partials: [Partials.Channel, Partials.Message],
       });
-
       client.on("messageCreate", async (message: any) => {
         try {
           if (!client.user) return;
@@ -652,9 +655,13 @@ async function startDiscordRuntimeInternal(reason: string): Promise<boolean> {
       });
 
       await client.login(bot.token);
-      await registerDiscordCommands(client);
+      discordConnectionMonitorCleanup.set(client, watchDiscordGatewayConnection(client, {
+        reconnectTimeoutMs: 60_000,
+        onReconnectTimeout: (trigger) => recoverDiscordRuntime(bot.workspaceId, trigger),
+      }));
       discordClients.set(bot.workspaceId, client);
       discordClientByProcessorId.set(processorId, client);
+      await registerDiscordCommands(client);
       startedCount += 1;
       log.debug("Discord runtime started", {
         reason,
@@ -695,7 +702,24 @@ export async function startDiscordRuntime(reason: string): Promise<boolean> {
 }
 
 export async function stopDiscordRuntime(reason: string): Promise<void> {
-  await discordRuntimeController.stop(reason);
+  discordIntentionalStop = true;
+  try {
+    await discordRuntimeController.stop(reason);
+  } finally {
+    discordIntentionalStop = false;
+  }
+}
+
+function recoverDiscordRuntime(workspaceId: string, trigger: string): void {
+  if (discordIntentionalStop || discordRecovery) return;
+
+  discordRecovery = (async () => {
+    log.warn("Discord gateway reconnect timed out; restarting clients", { workspaceId, trigger });
+    await discordRuntimeController.stop("gateway reconnect timeout");
+    await discordRuntimeController.start("gateway reconnect timeout");
+  })().finally(() => {
+    discordRecovery = null;
+  });
 }
 
 const discordRuntimeController = createRuntimeController({
@@ -703,6 +727,8 @@ const discordRuntimeController = createRuntimeController({
   startInternal: startDiscordRuntimeInternal,
   stopInternal: async (reason: string) => {
     for (const client of discordClients.values()) {
+      discordConnectionMonitorCleanup.get(client)?.();
+      discordConnectionMonitorCleanup.delete(client);
       client.destroy();
     }
     discordClients.clear();

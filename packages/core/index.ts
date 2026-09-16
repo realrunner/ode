@@ -344,7 +344,7 @@ async function main(): Promise<void> {
     }
     shuttingDown = true;
     runtimeShuttingDown = true;
-    log.debug("Shutting down...", { signal });
+    log.info("Runtime shutdown requested", { signal });
 
     try {
       stopCronJobScheduler();
