@@ -1,4 +1,4 @@
-import { App } from "@slack/bolt";
+import { App, SocketModeReceiver } from "@slack/bolt";
 import {
   getSlackTargetChannels,
   getSlackBotTokens,
@@ -30,6 +30,7 @@ import { SlackAuthRegistry, type WorkspaceAuth } from "@/ims/slack/state/auth-re
 import { SlackMessageUpdateManager } from "@/ims/slack/message-update-manager";
 import { deliveryStats, isRateLimitError } from "@/ims/shared/delivery-stats";
 import { isSyntheticOwner } from "@/ims/shared/synthetic-owner";
+import { watchSlackSocketModeConnection } from "./socket-mode-watchdog";
 
 export interface MessageContext {
   channelId: string;
@@ -42,6 +43,7 @@ export interface MessageContext {
 
 
 const appRegistry = new Map<string, App>();
+const appConnectionMonitorCleanup = new WeakMap<App, () => void>();
 const TRACE_SLACK_ROUTER = process.env.ODE_SLACK_TRACE === "1";
 
 const slackAuthRegistry = new SlackAuthRegistry();
@@ -64,6 +66,9 @@ export function clearSlackAuthState(): void {
 
 export function resetSlackState(): void {
   clearSlackAuthState();
+  for (const app of appRegistry.values()) {
+    stopSlackConnectionMonitoring(app);
+  }
   appRegistry.clear();
   slackMessageUpdateManager.clear();
   slackProcessorManager.clear();
@@ -93,7 +98,10 @@ async function buildSlackContext(
   };
 }
 
-export async function createSlackApp(appToken: string): Promise<App> {
+export async function createSlackApp(
+  appToken: string,
+  onConnectionStale?: (trigger: string) => void
+): Promise<App> {
   const normalizedAppToken = appToken.trim();
   if (normalizedAppToken.length === 0) {
     throw new Error("Slack app token missing");
@@ -109,14 +117,28 @@ export async function createSlackApp(appToken: string): Promise<App> {
     throw new Error("Missing Slack auth for app token");
   }
 
-  const createdApp = new App({
-    socketMode: true,
+  const receiver = new SocketModeReceiver({
     appToken: normalizedAppToken,
+  });
+  const createdApp = new App({
+    receiver,
     token: auth.botToken,
   });
 
+  if (onConnectionStale) {
+    appConnectionMonitorCleanup.set(createdApp, watchSlackSocketModeConnection(receiver.client, {
+      reconnectTimeoutMs: 60_000,
+      onReconnectTimeout: onConnectionStale,
+    }));
+  }
+
   appRegistry.set(normalizedAppToken, createdApp);
   return createdApp;
+}
+
+export function stopSlackConnectionMonitoring(app: App): void {
+  appConnectionMonitorCleanup.get(app)?.();
+  appConnectionMonitorCleanup.delete(app);
 }
 
 export function getApp(): App {

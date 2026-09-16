@@ -76,6 +76,8 @@ let webDevServer: ChildProcess | null = null;
 let slackApps: Array<Awaited<ReturnType<typeof slackClient.createSlackApp>>> = [];
 let slackAppTokens: string[] = [];
 let slackStarting = false;
+let slackRecovery: Promise<void> | null = null;
+let runtimeShuttingDown = false;
 let stopConfigWatcher: (() => void) | null = null;
 let upgradeTimer: ReturnType<typeof setInterval> | null = null;
 let upgradeInitialTimer: ReturnType<typeof setTimeout> | null = null;
@@ -93,6 +95,7 @@ function getLocalSlackAppTokens(): string[] {
 
 async function stopSlackRuntime(reason: string): Promise<void> {
   for (const app of slackApps) {
+    slackClient.stopSlackConnectionMonitoring(app);
     try {
       await app.stop();
     } catch (error) {
@@ -104,6 +107,18 @@ async function stopSlackRuntime(reason: string): Promise<void> {
   slackAppTokens = [];
   slackClient.resetSlackState();
   log.debug("Slack connections stopped", { reason });
+}
+
+function recoverSlackRuntime(trigger: string): void {
+  if (runtimeShuttingDown || slackRecovery) return;
+
+  slackRecovery = (async () => {
+    log.warn("Slack Socket Mode reconnect timed out; restarting connections", { trigger });
+    await stopSlackRuntime("socket reconnect timeout");
+    await startSlackRuntime("socket reconnect timeout");
+  })().finally(() => {
+    slackRecovery = null;
+  });
 }
 
 async function startSlackRuntime(reason: string): Promise<void> {
@@ -126,7 +141,7 @@ async function startSlackRuntime(reason: string): Promise<void> {
     await slackClient.initializeWorkspaceAuth();
     slackApps = [];
     for (const appToken of appTokens) {
-      const app = await slackClient.createSlackApp(appToken);
+      const app = await slackClient.createSlackApp(appToken, recoverSlackRuntime);
       slackApps.push(app);
     }
     slackAppTokens = appTokens;
@@ -328,6 +343,7 @@ async function main(): Promise<void> {
       return;
     }
     shuttingDown = true;
+    runtimeShuttingDown = true;
     log.debug("Shutting down...", { signal });
 
     try {
